@@ -221,3 +221,12 @@ __marimo__/
 
 # Nametag Printer
 nametag.png
+
+# AI tooling
+.claude/
+.serena/
+
+# Editor backups
+*.swp
+*~
+*.code-workspace

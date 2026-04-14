@@ -1,1 +1,1 @@
-nametags    ansible_user=pi
+nametags ansible_host=nametags.local    ansible_user=pi
