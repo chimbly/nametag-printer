@@ -13,9 +13,10 @@ app = Flask(__name__)
 def index():
     if request.method == "POST":
         name = request.form["name"]
-        second_line = request.form["second_line"]
+        pronouns = request.form.get("pronouns") or None
+        second_line = request.form.get("second_line") or None
 
-        print_name(name, second_line)
+        print_name(name, pronouns, second_line)
 
         return render_template("printing.html")
 

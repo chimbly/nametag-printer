@@ -45,9 +45,9 @@ def get_printer_id():
     return printer_id
 
 
-def print_name(name: str, second_line: str | None):
+def print_name(name: str, pronouns: str | None, second_line: str | None):
     """Print a nametag with the given name."""
-    image = make_image(name, second_line)
+    image = make_image(name, pronouns, second_line)
     image.rotate(90, expand=True)
     print_image(image)
 
@@ -60,11 +60,12 @@ def print_image(image: Image.Image):
     send(qr_data, printer_id)
 
 
-def make_image(name: str, second_line: str | None) -> Image.Image:
+def make_image(name: str, pronouns: str | None, second_line: str | None) -> Image.Image:
     """Generate a nametag image with the given name.
 
     Args:
         name: The name to display on the nametag
+        pronouns: Optional pronouns line (rendered between name and second line)
         second_line: Optional second line of text
     """
 
@@ -103,6 +104,7 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
 
     # Load fonts
     font_name_size = 170
+    font_pronouns_size = 80
     font_second_line_size = 120
     font_hello_size = 100
     font_my_name_is_size = 50
@@ -111,41 +113,39 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
     font_hello = ImageFont.truetype(font_path, font_hello_size)
     font_my_name_is = ImageFont.truetype(bold_font_path, font_my_name_is_size)
 
-    # Trim second line, turn empty to None
+    # Trim optional lines, treat empty as absent
+    if pronouns is not None:
+        pronouns = pronouns.strip()
+        if len(pronouns) == 0:
+            pronouns = None
     if second_line is not None:
         second_line = second_line.strip()
         if len(second_line) == 0:
             second_line = None
 
-    # Dynamically adjust font size for the name
-    while True:
-        font_name = ImageFont.truetype(font_path, font_name_size)
+    def _fit_font(text: str, start_size: int, step: int = 5) -> tuple[ImageFont.FreeTypeFont, int]:
+        """Shrink-to-fit: find the largest font size whose bbox fits horizontally."""
+        size = start_size
+        while True:
+            font = ImageFont.truetype(font_path, size)
+            (left, _, right, _) = font.getbbox(text)
+            if right - left <= image_width - 100:
+                return font, size
+            size -= step
 
-        (left, top, right, bottom) = font_name.getbbox(name)
-        text_width = right - left
-        text_height = bottom - top
+    font_name, font_name_size = _fit_font(name, font_name_size)
+    (_, name_top, _, name_bottom) = font_name.getbbox(name)
+    name_height = name_bottom - name_top
 
-        # Leave a margin on both sides
-        if text_width <= image_width - 100:
-            break
+    if pronouns is not None:
+        font_pronouns, font_pronouns_size = _fit_font(pronouns, font_pronouns_size)
+        (_, pronouns_top, _, pronouns_bottom) = font_pronouns.getbbox(pronouns)
+        pronouns_height = pronouns_bottom - pronouns_top
 
-        # Decrease font size if text is too wide
-        font_name_size -= 5
-
-    # Dynamically adjust font size for the second line
-    while second_line:
-        font_second_line = ImageFont.truetype(font_path, font_second_line_size)
-
-        (left, top, right, bottom) = font_second_line.getbbox(second_line)
-        second_line_width = right - left
-        second_line_height = bottom - top
-
-        # Leave a margin on both sides
-        if second_line_width <= image_width - 100:
-            break
-
-        # Decrease font size if text is too wide
-        font_second_line_size -= 5
+    if second_line is not None:
+        font_second_line, font_second_line_size = _fit_font(second_line, font_second_line_size)
+        (_, sl_top, _, sl_bottom) = font_second_line.getbbox(second_line)
+        second_line_height = sl_bottom - sl_top
 
     # Add black bars at the top and bottom
     draw.rectangle([(0, 0), (image_width, top_bar_height)], fill="black")
@@ -176,31 +176,26 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
     my_name_is_text = "my name is"
     draw.text((center_x, my_name_is_text_y), my_name_is_text, anchor="ma", fill="white", font=font_my_name_is)
 
-    # Calculate text position to center the name within the white space
+    # Stack name + optional pronouns + optional second_line centered in the
+    # white space between the black bars.
     white_space_top = top_bar_height
     white_space_bottom = image_height - bottom_bar_height
     white_space_height = white_space_bottom - white_space_top
 
-    text_y = white_space_top + (white_space_height - text_height) // 2 + text_height
-
-    # Draw the second line if specified (moves name up)
+    lines: list[tuple[str, ImageFont.FreeTypeFont, float]] = [(name, font_name, name_height)]
+    if pronouns is not None:
+        lines.append((pronouns, font_pronouns, pronouns_height))
     if second_line is not None:
-        spacing = 40
+        lines.append((second_line, font_second_line, second_line_height))
 
-        combined_height = text_height + second_line_height + spacing
-        text_y = (
-            white_space_top + (white_space_height - combined_height) // 2
-            + text_height
-        )
+    spacing = 40
+    combined_height = sum(h for _, _, h in lines) + spacing * (len(lines) - 1)
+    top_y = white_space_top + (white_space_height - combined_height) // 2
 
-        draw.text((center_x, text_y + second_line_height + spacing),
-            second_line,
-            anchor="mb",
-            fill="black",
-            font=font_second_line,
-        )
-
-    # Draw the name on the image
-    draw.text((center_x, text_y), name, anchor="mb", fill="black", font=font_name)
+    cursor_y = top_y
+    for text, font, height in lines:
+        # anchor="mb": (x, y) is bottom-center of the text box.
+        draw.text((center_x, cursor_y + height), text, anchor="mb", fill="black", font=font)
+        cursor_y += height + spacing
 
     return image

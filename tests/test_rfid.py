@@ -12,13 +12,13 @@ from nametags.rfid import lookup_rfid
 class TestRfidLookup(TestCase):
     def test_first_name(self):
         # ID: 94877866
-        first_name = lookup_rfid("1111111111")
-        self.assertEqual(first_name, "testy")
+        (name, _, _) = lookup_rfid("1111111111")
+        self.assertEqual(name, "testy")
 
-    def test_preferred_name(self):
+    def test_nickname(self):
         # ID: 86867117
-        preferred_name = lookup_rfid("2222222222")
-        self.assertEqual(preferred_name, "nickname")
+        (name, _, _) = lookup_rfid("2222222222")
+        self.assertEqual(name, "nickname")
 
 
 class FakeEvent:
@@ -45,10 +45,10 @@ class TestRfidListen(TestCase):
                 raise StopIteration  # Used to break the loop
 
         def mock_lookup_rfid(rfid_tag):
-            # Only return a name for the valid 10-digit RFID
+            # Only return a match for the valid 10-digit RFID
             if rfid_tag == "1234567890":
-                return "Test Name"
-            return None
+                return ("Test Name", "they/them", "Test Subtitle")
+            return (None, None, None)
 
         with patch('nametags.rfid.keyboard.read_event', fake_read_event), \
              patch('nametags.rfid.lookup_rfid', side_effect=mock_lookup_rfid), \
@@ -60,4 +60,4 @@ class TestRfidListen(TestCase):
             except StopIteration:
                 pass
             # Only the valid RFID should trigger print_name
-            mock_print_name.assert_called_once_with("Test Name")
+            mock_print_name.assert_called_once_with("Test Name", "they/them", "Test Subtitle")

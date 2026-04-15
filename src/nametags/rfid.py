@@ -1,84 +1,41 @@
 import logging
-from os import environ
-from urllib.parse import urlencode
 
 import keyboard
 
+from .dhservice import search_member_by_rfid_tag
 from .logconf import setup_logging
 from .printer import print_name
-from .WaApi import WaApiClient
 
 setup_logging()
 
 logger = logging.getLogger(__name__)
 
-# Raises KeyError if not set
-WA_CLIENT_ID = environ["WA_CLIENT_ID"]
-WA_CLIENT_SECRET = environ["WA_CLIENT_SECRET"]
-WA_API_KEY = environ["WA_API_KEY"]
 
-# Field names
-RFID_FIELD = "custom-9894255"
-FIRST_NAME_FIELD = "FirstName"
-PREFERRED_NAME_FIELD = "custom-17061153"
-SECOND_LINE_FIELD = "custom-17703390"
+def lookup_rfid(rfid_tag: str) -> tuple[str | None, str | None, str | None]:
+    """Look up the nametag data for ``rfid_tag`` in deepharbor.
 
-# Globals to cache the API client and contacts URL
-# (API client will refresh the token as needed)
-_api_client = None
-_contacts_url = None
+    Returns ``(name, pronouns, second_line)`` where any element may be
+    ``None``. ``name`` is the member's ``nickname`` when set, otherwise
+    ``first_name``. An unknown tag returns ``(None, None, None)``.
+    """
+    try:
+        member = search_member_by_rfid_tag(rfid_tag)
+    except Exception as exc:
+        logger.warning(f"DHService lookup failed for RFID tag {rfid_tag}: {exc}")
+        return (None, None, None)
 
+    if member is None:
+        logger.warning(f"RFID tag {rfid_tag} not found.")
+        return (None, None, None)
 
-def get_api_client():
-    """Get an authenticated WaApiClient instance."""
-    global _api_client
-    if _api_client is None:
-        _api_client = WaApiClient(WA_CLIENT_ID, WA_CLIENT_SECRET)
-        _api_client.authenticate_with_apikey(WA_API_KEY)
-    return _api_client
+    name = member.get("nickname") or member.get("first_name")
+    pronouns = member.get("pronouns")
+    second_line = member.get("nametag_subtitle")
 
-
-def get_contacts_url(api):
-    """Get the contacts URL."""
-    global _contacts_url
-    if _contacts_url is None:
-        accounts = api.execute_request("/v2/accounts/")
-        account = accounts[0]
-        _contacts_url = next(res for res in account.Resources if res.Name == "Contacts").Url
-    return _contacts_url
-
-
-def lookup_rfid(rfid_tag: str) -> (str | None, str | None):
-    """Lookup the name corresponding to the RFID tag."""
-    api = get_api_client()
-    contacts_url = get_contacts_url(api)
-
-    # https://gethelp.wildapricot.com/en/articles/502#filtering
-    params = {"$filter": f"substringof('{RFID_FIELD}', '{rfid_tag}')", "$async": "false"}
-    request = contacts_url[:-1] + "?" + urlencode(params)
-
-    response = api.execute_request(request)
-
-    if not hasattr(response, "Contacts") or len(response.Contacts) != 1:
-        logger.warning(f"RFID tag {rfid_tag} not found or multiple matches.")
-        return (None, None)
-
-    contact = response.Contacts[0]
-
-    preferred_name = next(i for i in contact.FieldValues if i.SystemCode == PREFERRED_NAME_FIELD).Value
-    first_name = next(i for i in contact.FieldValues if i.SystemCode == FIRST_NAME_FIELD).Value
-    second_line = next(i for i in contact.FieldValues if i.SystemCode == SECOND_LINE_FIELD).Value
-
-    first_line = None
-    if first_name:
-        first_line = first_name
-    if preferred_name:
-        first_line = preferred_name
-
-    if not first_line:
+    if not name:
         logger.warning(f"No name on record for member with RFID tag {rfid_tag}.")
 
-    return (first_line, second_line)
+    return (name, pronouns, second_line)
 
 
 def listen_for_rfid():
@@ -92,10 +49,10 @@ def listen_for_rfid():
             if char == "enter":  # Linebreak indicates end of RFID input
                 if len(buffer) == 10 and buffer.isdigit():
                     logger.info(f"RFID Tag Detected: {buffer}")
-                    (first_line, second_line) = lookup_rfid(buffer)
-                    if first_line:
-                        logger.info(f"Matched Name: {first_line}")
-                        print_name(first_line, second_line)
+                    (name, pronouns, second_line) = lookup_rfid(buffer)
+                    if name:
+                        logger.info(f"Matched Name: {name}")
+                        print_name(name, pronouns, second_line)
                 buffer = ""  # Clear the buffer after processing
             elif char.isdigit():  # Append digits to the buffer
                 buffer += char
