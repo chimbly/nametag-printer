@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from .printer import make_image
+from .sanitize import sanitize_label_text
 
 
 def render(args):
@@ -19,6 +20,12 @@ def render(args):
     else:
         name = args.name
         second_line = args.second_line
+
+    try:
+        name, second_line = sanitize_label_text(name, second_line)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     image = make_image(name, second_line)
 

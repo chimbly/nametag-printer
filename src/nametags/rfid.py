@@ -6,6 +6,7 @@ import keyboard
 
 from .logconf import setup_logging
 from .printer import print_name
+from .sanitize import safe_log_text, sanitize_label_text
 from .WaApi import WaApiClient
 
 setup_logging()
@@ -60,7 +61,7 @@ def lookup_rfid(rfid_tag: str) -> (str | None, str | None):
     response = api.execute_request(request)
 
     if not hasattr(response, "Contacts") or len(response.Contacts) != 1:
-        logger.warning(f"RFID tag {rfid_tag} not found or multiple matches.")
+        logger.warning("RFID tag %s not found or multiple matches.", safe_log_text(rfid_tag))
         return (None, None)
 
     contact = response.Contacts[0]
@@ -76,7 +77,10 @@ def lookup_rfid(rfid_tag: str) -> (str | None, str | None):
         first_line = preferred_name
 
     if not first_line:
-        logger.warning(f"No name on record for member with RFID tag {rfid_tag}.")
+        logger.warning(
+            "No name on record for member with RFID tag %s.",
+            safe_log_text(rfid_tag),
+        )
 
     return (first_line, second_line)
 
@@ -91,16 +95,21 @@ def listen_for_rfid():
             char = event.name
             if char == "enter":  # Linebreak indicates end of RFID input
                 if len(buffer) == 10 and buffer.isdigit():
-                    logger.info(f"RFID Tag Detected: {buffer}")
+                    logger.info("RFID Tag Detected: %s", safe_log_text(buffer))
                     (first_line, second_line) = lookup_rfid(buffer)
                     if first_line:
-                        logger.info(f"Matched Name: {first_line}")
+                        logger.info("Matched Name: %s", safe_log_text(first_line))
+                        try:
+                            first_line, second_line = sanitize_label_text(first_line, second_line)
+                        except ValueError as exc:
+                            logger.warning("Skipping invalid label text: %s", exc)
+                            continue
                         print_name(first_line, second_line)
                 buffer = ""  # Clear the buffer after processing
             elif char.isdigit():  # Append digits to the buffer
                 buffer += char
                 buffer = buffer[-10:]
-                logger.debug(f"Buffer: {buffer}")
+                logger.debug("Buffer: %s", safe_log_text(buffer))
 
 
 if __name__ == "__main__":
