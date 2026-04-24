@@ -39,7 +39,7 @@ class TestPrinterUnicode(TestCase):
         ):
             labels_manager.return_value.iter_elements.return_value = [self._label()]
             image = printer.make_image(
-                "ርሁዪነቿጋ 你好 नमस्ते مرحبا 👩‍💻",
+                "\u122d\u1201\u12ea\u1290\u127f\u130b \u4f60\u597d \u0928\u092e\u0938\u094d\u0924\u0947 \u0645\u0631\u062d\u0628\u0627 \U0001f469\u200d\U0001f4bb",
                 "Pumping Station One",
             )
 
