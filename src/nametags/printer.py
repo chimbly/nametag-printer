@@ -138,7 +138,7 @@ def _text_runs(text: str, font_files: list[str], size: int) -> list[tuple[str, s
                     break
 
         if chosen is None:
-            continue  # silently drop unsupported chars
+            continue
 
         if run_font != chosen and run_text:
             runs.append((run_text, run_font))
@@ -243,6 +243,7 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
         name: The name to display on the nametag
         second_line: Optional second line of text
     """
+
     name = unicodedata.normalize("NFC", name)
 
     # Trim second line, turn empty to None
@@ -295,8 +296,7 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
     font_my_name_is = _get_font(bold_font_path, font_my_name_is_size)
 
     text_fonts = _font_chain(font_path)
-
-    font_name_size, name_runs, name_widths, text_width, text_height = _fit_line(
+    font_name_size, name_runs, name_widths, _, text_height = _fit_line(
         draw,
         name,
         font_name_size,
@@ -304,7 +304,6 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
         text_fonts,
     )
 
-    # Dynamically adjust font size for the second line
     second_line_runs: list[tuple[str, str]] = []
     second_line_widths: list[int] = []
     second_line_height = 0
@@ -313,7 +312,7 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
             font_second_line_size,
             second_line_runs,
             second_line_widths,
-            second_line_width,
+            _,
             second_line_height,
         ) = _fit_line(
             draw,
