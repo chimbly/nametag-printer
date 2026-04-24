@@ -1,5 +1,4 @@
 from io import BytesIO
-import logging
 import unicodedata
 from os import environ, path
 
@@ -14,7 +13,6 @@ from wand.image import Image as WandImage
 from .logconf import setup_logging
 
 setup_logging()
-logger = logging.getLogger(__name__)
 
 # Get the directory of the current script
 script_dir = path.dirname(path.abspath(__file__))
@@ -32,107 +30,125 @@ for asset_path in (logo_path, font_path, bold_font_path):
     if not path.isfile(asset_path):
         raise FileNotFoundError(f"Font file not found: {asset_path}")
 
+
 LABEL_SIZE = environ.get("LABEL_SIZE", "62x100")
 MIN_FONT_SIZE = int(environ.get("MIN_FONT_SIZE", "30"))
 
 _FORMAT_CHARS = {"\u200c", "\u200d", "\ufe0e", "\ufe0f"}
+_FONT_CACHE: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
+_MISSING_CACHE: dict[tuple[str, int], tuple[tuple[int, int], bytes]] = {}
+_SUPPORT_CACHE: dict[tuple[str, int, str], bool] = {}
 
 
-def _font_candidates(primary_font: str) -> list[str]:
-    env_paths = [
+def _font_chain(primary_font: str) -> list[str]:
+    configured = [
         p.strip()
         for p in environ.get("UNICODE_FONT_PATHS", "").split(path.pathsep)
         if p.strip()
     ]
-    system_paths = [
+    common = [
         path.join(asset_dir, "NotoSans-Regular.ttf"),
         path.join(asset_dir, "NotoSansArabic-Regular.ttf"),
         path.join(asset_dir, "NotoSansHebrew-Regular.ttf"),
-        path.join(asset_dir, "Ebrima.ttf"),
         path.join(asset_dir, "msyh.ttc"),
         path.join(asset_dir, "malgun.ttf"),
-        path.join(asset_dir, "seguiemj.ttf"),
-        path.join(asset_dir, "seguisym.ttf"),
+        path.join(asset_dir, "Ebrima.ttf"),
         "C:\\Windows\\Fonts\\NotoSans-Regular.ttf",
-        "C:\\Windows\\Fonts\\NotoSansArabic-Regular.ttf",
-        "C:\\Windows\\Fonts\\NotoSansHebrew-Regular.ttf",
-        "C:\\Windows\\Fonts\\ebrima.ttf",
         "C:\\Windows\\Fonts\\msyh.ttc",
         "C:\\Windows\\Fonts\\malgun.ttf",
-        "C:\\Windows\\Fonts\\seguiemj.ttf",
-        "C:\\Windows\\Fonts\\seguisym.ttf",
+        "C:\\Windows\\Fonts\\ebrima.ttf",
         "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoSansHebrew-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
-    candidates: list[str] = []
-    for candidate in [primary_font, *env_paths, *system_paths]:
-        if path.isfile(candidate) and candidate not in candidates:
-            candidates.append(candidate)
-    return candidates
+
+    ordered: list[str] = []
+    for candidate in [primary_font, *configured, *common]:
+        if path.isfile(candidate) and candidate not in ordered:
+            ordered.append(candidate)
+    return ordered
 
 
 def _get_font(font_file: str, size: int) -> ImageFont.FreeTypeFont:
+    key = (font_file, size)
+    if key in _FONT_CACHE:
+        return _FONT_CACHE[key]
+
     if hasattr(ImageFont, "Layout"):
         try:
-            return ImageFont.truetype(
+            _FONT_CACHE[key] = ImageFont.truetype(
                 font_file,
                 size=size,
                 layout_engine=ImageFont.Layout.RAQM,
             )
+            return _FONT_CACHE[key]
         except Exception:
             pass
-    return ImageFont.truetype(font_file, size=size)
+
+    _FONT_CACHE[key] = ImageFont.truetype(font_file, size=size)
+    return _FONT_CACHE[key]
 
 
-def _glyph_fingerprint(
-    font: ImageFont.FreeTypeFont, ch: str
-) -> tuple[tuple[int, int], bytes]:
-    mask = font.getmask(ch, mode="L")
-    return mask.size, bytes(mask)
+def _missing_fingerprint(font_file: str, size: int) -> tuple[tuple[int, int], bytes]:
+    key = (font_file, size)
+    if key in _MISSING_CACHE:
+        return _MISSING_CACHE[key]
+
+    mask = _get_font(font_file, size).getmask("\u0378", mode="L")
+    _MISSING_CACHE[key] = (mask.size, bytes(mask))
+    return _MISSING_CACHE[key]
 
 
-def _supports_char(font: ImageFont.FreeTypeFont, ch: str) -> bool:
+def _supports_char(font_file: str, size: int, ch: str) -> bool:
+    key = (font_file, size, ch)
+    if key in _SUPPORT_CACHE:
+        return _SUPPORT_CACHE[key]
+
     if ch.isspace() or ch in _FORMAT_CHARS:
+        _SUPPORT_CACHE[key] = True
         return True
-    category = unicodedata.category(ch)
-    if category.startswith("M"):  # combining mark
+
+    if unicodedata.category(ch).startswith("M"):
+        _SUPPORT_CACHE[key] = True
         return True
-    unknown = _glyph_fingerprint(font, "\u0378")
-    return _glyph_fingerprint(font, ch) != unknown
+
+    font = _get_font(font_file, size)
+    char_mask = font.getmask(ch, mode="L")
+    missing_size, missing_data = _missing_fingerprint(font_file, size)
+    supported = not (
+        char_mask.size == missing_size and bytes(char_mask) == missing_data
+    )
+
+    _SUPPORT_CACHE[key] = supported
+    return supported
 
 
-def _split_runs(text: str, font_files: list[str], size: int) -> list[tuple[str, str]]:
+def _text_runs(text: str, font_files: list[str], size: int) -> list[tuple[str, str]]:
     runs: list[tuple[str, str]] = []
-    current_font: str | None = None
-    current_text = ""
+    run_text = ""
+    run_font: str | None = None
 
     for ch in text:
-        target_font = None
-        if ch.isspace() and current_font is not None:
-            target_font = current_font
-        else:
+        chosen = run_font if (run_font and ch.isspace()) else None
+        if chosen is None:
             for font_file in font_files:
-                font = _get_font(font_file, size)
-                if _supports_char(font, ch):
-                    target_font = font_file
+                if _supports_char(font_file, size, ch):
+                    chosen = font_file
                     break
 
-        if target_font is None:
-            continue  # silently drop unsupported characters
+        if chosen is None:
+            continue  # silently drop unsupported chars
 
-        if target_font != current_font and current_text:
-            runs.append((current_text, current_font))
-            current_text = ""
+        if run_font != chosen and run_text:
+            runs.append((run_text, run_font))
+            run_text = ""
 
-        current_font = target_font
-        current_text += ch
+        run_font = chosen
+        run_text += ch
 
-    if current_text and current_font is not None:
-        runs.append((current_text, current_font))
+    if run_text and run_font is not None:
+        runs.append((run_text, run_font))
 
     return runs
 
@@ -145,6 +161,7 @@ def _measure_runs(
     widths: list[int] = []
     total_width = 0
     line_height = 0
+
     for run_text, run_font_file in runs:
         run_font = _get_font(run_font_file, size)
         left, top, right, bottom = draw.textbbox((0, 0), run_text, font=run_font)
@@ -153,6 +170,7 @@ def _measure_runs(
         widths.append(width)
         total_width += width
         line_height = max(line_height, height)
+
     return widths, total_width, line_height
 
 
@@ -162,13 +180,13 @@ def _fit_line(
     start_size: int,
     max_width: int,
     font_files: list[str],
-) -> tuple[int, list[tuple[str, str]], int, int]:
+) -> tuple[int, list[tuple[str, str]], list[int], int, int]:
     size = start_size
     while True:
-        runs = _split_runs(text, font_files, size)
-        _, width, height = _measure_runs(draw, runs, size)
-        if width <= max_width or size <= MIN_FONT_SIZE:
-            return size, runs, width, height
+        runs = _text_runs(text, font_files, size)
+        widths, total_width, line_height = _measure_runs(draw, runs, size)
+        if total_width <= max_width or size <= MIN_FONT_SIZE:
+            return size, runs, widths, total_width, line_height
         size -= 5
 
 
@@ -184,6 +202,7 @@ def _draw_centered_runs(
 ):
     x = center_x - (sum(widths) // 2)
     y = baseline_y - line_height
+
     for (run_text, run_font_file), run_width in zip(runs, widths):
         run_font = _get_font(run_font_file, size)
         draw.text((x, y), run_text, anchor="lt", fill=fill, font=run_font)
@@ -225,6 +244,8 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
         second_line: Optional second line of text
     """
     name = unicodedata.normalize("NFC", name)
+
+    # Trim second line, turn empty to None
     if second_line is not None:
         second_line = unicodedata.normalize("NFC", second_line).strip()
         if len(second_line) == 0:
@@ -273,33 +294,33 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
     font_hello = _get_font(font_path, font_hello_size)
     font_my_name_is = _get_font(bold_font_path, font_my_name_is_size)
 
-    name_fonts = _font_candidates(font_path)
-    second_line_fonts = _font_candidates(font_path)
+    text_fonts = _font_chain(font_path)
 
-    font_name_size, name_runs, _, text_height = _fit_line(
+    font_name_size, name_runs, name_widths, text_width, text_height = _fit_line(
         draw,
         name,
         font_name_size,
         image_width - 100,
-        name_fonts,
+        text_fonts,
     )
-    name_run_widths, _, _ = _measure_runs(draw, name_runs, font_name_size)
 
+    # Dynamically adjust font size for the second line
     second_line_runs: list[tuple[str, str]] = []
+    second_line_widths: list[int] = []
     second_line_height = 0
-    second_line_run_widths: list[int] = []
     if second_line:
-        font_second_line_size, second_line_runs, _, second_line_height = _fit_line(
+        (
+            font_second_line_size,
+            second_line_runs,
+            second_line_widths,
+            second_line_width,
+            second_line_height,
+        ) = _fit_line(
             draw,
             second_line,
             font_second_line_size,
             image_width - 100,
-            second_line_fonts,
-        )
-        second_line_run_widths, _, _ = _measure_runs(
-            draw,
-            second_line_runs,
-            font_second_line_size,
+            text_fonts,
         )
 
     # Add black bars at the top and bottom
@@ -362,6 +383,7 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
     # Draw the second line if specified (moves name up)
     if second_line_runs:
         spacing = 40
+
         combined_height = text_height + second_line_height + spacing
         text_y = (
             white_space_top + (white_space_height - combined_height) // 2 + text_height
@@ -370,7 +392,7 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
         _draw_centered_runs(
             draw,
             second_line_runs,
-            second_line_run_widths,
+            second_line_widths,
             center_x,
             text_y + second_line_height + spacing,
             font_second_line_size,
@@ -382,7 +404,7 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
     _draw_centered_runs(
         draw,
         name_runs,
-        name_run_widths,
+        name_widths,
         center_x,
         text_y,
         font_name_size,
