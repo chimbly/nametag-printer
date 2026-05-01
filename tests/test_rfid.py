@@ -3,6 +3,7 @@ There's really no good way to test this project without actually running it
 on hardware (RFID reader and label printer). However, we can test the RFID
 lookup function against known RFID values.
 """
+
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -32,9 +33,13 @@ class TestRfidListen(TestCase):
         # Simulate: invalid short RFID, invalid long RFID, then valid RFID, each followed by 'enter'
         # Short: 5 digits, Long: 12 digits, Valid: 10 digits
         events = (
-            [FakeEvent(str(d)) for d in range(1, 6)] + [FakeEvent("enter")]  # short
-            + [FakeEvent(str(d % 10)) for d in range(1, 13)] + [FakeEvent("enter")]  # long
-            + [FakeEvent(str(d)) for d in range(1, 10)] + [FakeEvent("0")] + [FakeEvent("enter")]  # valid: 1234567890
+            [FakeEvent(str(d)) for d in range(1, 6)]
+            + [FakeEvent("enter")]  # short
+            + [FakeEvent(str(d % 10)) for d in range(1, 13)]
+            + [FakeEvent("enter")]  # long
+            + [FakeEvent(str(d)) for d in range(1, 10)]
+            + [FakeEvent("0")]
+            + [FakeEvent("enter")]  # valid: 1234567890
         )
         event_iter = iter(events)
 
@@ -50,12 +55,15 @@ class TestRfidListen(TestCase):
                 return "Test Name"
             return None
 
-        with patch('nametags.rfid.keyboard.read_event', fake_read_event), \
-             patch('nametags.rfid.lookup_rfid', side_effect=mock_lookup_rfid), \
-             patch('nametags.rfid.print_name') as mock_print_name, \
-             patch('nametags.rfid.logger'):
+        with (
+            patch("nametags.rfid.keyboard.read_event", fake_read_event),
+            patch("nametags.rfid.lookup_rfid", side_effect=mock_lookup_rfid),
+            patch("nametags.rfid.print_name") as mock_print_name,
+            patch("nametags.rfid.logger"),
+        ):
             try:
                 from nametags import rfid
+
                 rfid.listen_for_rfid()
             except StopIteration:
                 pass

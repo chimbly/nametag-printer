@@ -44,7 +44,9 @@ def get_contacts_url(api):
     if _contacts_url is None:
         accounts = api.execute_request("/v2/accounts/")
         account = accounts[0]
-        _contacts_url = next(res for res in account.Resources if res.Name == "Contacts").Url
+        _contacts_url = next(
+            res for res in account.Resources if res.Name == "Contacts"
+        ).Url
     return _contacts_url
 
 
@@ -54,7 +56,10 @@ def lookup_rfid(rfid_tag: str) -> (str | None, str | None):
     contacts_url = get_contacts_url(api)
 
     # https://gethelp.wildapricot.com/en/articles/502#filtering
-    params = {"$filter": f"substringof('{RFID_FIELD}', '{rfid_tag}')", "$async": "false"}
+    params = {
+        "$filter": f"substringof('{RFID_FIELD}', '{rfid_tag}')",
+        "$async": "false",
+    }
     request = contacts_url[:-1] + "?" + urlencode(params)
 
     response = api.execute_request(request)
@@ -65,9 +70,15 @@ def lookup_rfid(rfid_tag: str) -> (str | None, str | None):
 
     contact = response.Contacts[0]
 
-    preferred_name = next(i for i in contact.FieldValues if i.SystemCode == PREFERRED_NAME_FIELD).Value
-    first_name = next(i for i in contact.FieldValues if i.SystemCode == FIRST_NAME_FIELD).Value
-    second_line = next(i for i in contact.FieldValues if i.SystemCode == SECOND_LINE_FIELD).Value
+    preferred_name = next(
+        i for i in contact.FieldValues if i.SystemCode == PREFERRED_NAME_FIELD
+    ).Value
+    first_name = next(
+        i for i in contact.FieldValues if i.SystemCode == FIRST_NAME_FIELD
+    ).Value
+    second_line = next(
+        i for i in contact.FieldValues if i.SystemCode == SECOND_LINE_FIELD
+    ).Value
 
     first_line = None
     if first_name:

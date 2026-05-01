@@ -36,7 +36,7 @@ LABEL_SIZE = environ.get("LABEL_SIZE", "62x100")
 def get_printer_id():
     """Auto-discover the printer and return its identifier."""
     # Auto-discover the printer using the pyusb backend
-    printer_id = discover('pyusb')[0]['identifier']
+    printer_id = discover("pyusb")[0]["identifier"]
 
     # Discard broken serial from identifier
     # https://github.com/pklaus/brother_ql_web/issues/10#issuecomment-994990935
@@ -149,32 +149,53 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
 
     # Add black bars at the top and bottom
     draw.rectangle([(0, 0), (image_width, top_bar_height)], fill="black")
-    draw.rectangle([(0, image_height - bottom_bar_height), (image_width, image_height)], fill="black")
+    draw.rectangle(
+        [(0, image_height - bottom_bar_height), (image_width, image_height)],
+        fill="black",
+    )
 
     # Render the SVG logo into a rasterized image using Wand
-    with WandImage(filename=logo_path, background=Color('transparent'), resolution=300) as wand_image:
-        wand_image.format = 'png'  # Convert the SVG to PNG format
-        wand_image.resize(logo_size[0], logo_size[1])  # Resize the image to the desired size
-        logo_png_data = wand_image.make_blob('png')  # Get the PNG data as a binary blob
-        logo_image = Image.open(BytesIO(logo_png_data)).convert("RGBA")  # Convert to a Pillow image
+    with WandImage(
+        filename=logo_path, background=Color("transparent"), resolution=300
+    ) as wand_image:
+        wand_image.format = "png"  # Convert the SVG to PNG format
+        wand_image.resize(
+            logo_size[0], logo_size[1]
+        )  # Resize the image to the desired size
+        logo_png_data = wand_image.make_blob("png")  # Get the PNG data as a binary blob
+        logo_image = Image.open(BytesIO(logo_png_data)).convert(
+            "RGBA"
+        )  # Convert to a Pillow image
 
     # Add the logo to the top-left corner of the black bar
     top_left_logo_x = logo_inset
-    top_left_logo_y = (top_bar_height - logo_size[1]) // 2  # Center vertically in the black bar
+    top_left_logo_y = (
+        top_bar_height - logo_size[1]
+    ) // 2  # Center vertically in the black bar
     image.paste(logo_image, (top_left_logo_x, top_left_logo_y), logo_image)
 
     # Add the logo to the top-right corner of the black bar
     top_right_logo_x = image_width - logo_size[0] - logo_inset
-    top_right_logo_y = (top_bar_height - logo_size[1]) // 2  # Center vertically in the black bar
+    top_right_logo_y = (
+        top_bar_height - logo_size[1]
+    ) // 2  # Center vertically in the black bar
     image.paste(logo_image, (top_right_logo_x, top_right_logo_y), logo_image)
 
     # Add "Hello" text
     hello_text = "Hello"
-    draw.text((center_x, hello_text_y), hello_text, anchor="ma", fill="white", font=font_hello)
+    draw.text(
+        (center_x, hello_text_y), hello_text, anchor="ma", fill="white", font=font_hello
+    )
 
     # Add "my name is" text
     my_name_is_text = "my name is"
-    draw.text((center_x, my_name_is_text_y), my_name_is_text, anchor="ma", fill="white", font=font_my_name_is)
+    draw.text(
+        (center_x, my_name_is_text_y),
+        my_name_is_text,
+        anchor="ma",
+        fill="white",
+        font=font_my_name_is,
+    )
 
     # Calculate text position to center the name within the white space
     white_space_top = top_bar_height
@@ -189,11 +210,11 @@ def make_image(name: str, second_line: str | None) -> Image.Image:
 
         combined_height = text_height + second_line_height + spacing
         text_y = (
-            white_space_top + (white_space_height - combined_height) // 2
-            + text_height
+            white_space_top + (white_space_height - combined_height) // 2 + text_height
         )
 
-        draw.text((center_x, text_y + second_line_height + spacing),
+        draw.text(
+            (center_x, text_y + second_line_height + spacing),
             second_line,
             anchor="mb",
             fill="black",

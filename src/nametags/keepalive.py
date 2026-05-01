@@ -2,6 +2,7 @@
 The Brother QL-800 printer seems to go to sleep after a period of inactivity.
 This module periodically sends a status request to keep it awake.
 """
+
 import logging
 import time
 
@@ -18,7 +19,7 @@ def keep_printer_awake():
         status_fn(
             printer_model="QL-800",
             printer_identifier=get_printer_id(),
-            backend_identifier='pyusb',
+            backend_identifier="pyusb",
         )
         time.sleep(300)  # Every 5 minutes
 
