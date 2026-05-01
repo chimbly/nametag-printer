@@ -3,7 +3,6 @@ The Brother QL-800 printer seems to go to sleep after a period of inactivity.
 This module periodically sends a status request to keep it awake.
 """
 
-import logging
 import time
 
 from brother_ql.backends.helpers import status as status_fn
