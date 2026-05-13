@@ -30,7 +30,9 @@ class _FakeWandImage:
 
 class TestPrinterUnicode(TestCase):
     def _label(self):
-        return SimpleNamespace(identifier=printer.LABEL_SIZE, dots_printable=(696, 1109))
+        return SimpleNamespace(
+            identifier=printer.LABEL_SIZE, dots_printable=(696, 1109)
+        )
 
     def test_make_image_handles_unicode_text(self):
         with (
